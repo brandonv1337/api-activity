@@ -1,7 +1,7 @@
 from flask import Flask, jsonify
 from flask_restful import Resource, Api, reqparse
 
-app = Flask(__name__)
+
 
 def init_api(app: Flask) -> None:
     api = Api(app)
@@ -20,7 +20,7 @@ def create_app() -> Flask:
 
 class Hello(Resource):
     def get(self):
-        return jsonify({"message": "Hello World"})
+        return jsonify({"message": "Hello World!"})
     
 class Square(Resource):
     def get(self, num):

@@ -1,16 +1,27 @@
-from api_activity.app import create_app
 import pytest
+
+from api_activity.app import create_app
+
+
 @pytest.fixture
 def client():
     with create_app().test_client() as client:
         yield client
 
-def test_hello():
+
+def test_hello(client):
     response = client.get('/')
     assert response.status_code == 200
-    assert response.json == {'message': "Hello World!"}
+    assert response.json == {"message": "Hello World!"}
 
-def test_square(num):
-    response = client.get('/square/<int:num>')
+
+def test_square(client):
+    response = client.get('/square/4')
     assert response.status_code == 200
-    assert response.json == ({'Shape':__class__.__name__, 'Area':num*num})
+    assert response.json == {'Shape': 'Square', 'Area': 16}
+
+
+def test_echo(client):
+    response = client.get('/echo?arg1=hello&arg2=world')
+    assert response.status_code == 200
+    assert response.json == {'arg1': 'hello', 'arg2': 'world'}
