@@ -8,3 +8,9 @@ wheels/
 
 # Virtual environments
 .venv
+
+# Private key
+MyKey.pem
+
+# Local database
+activity.db

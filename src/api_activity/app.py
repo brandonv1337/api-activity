@@ -1,6 +1,17 @@
-from flask import Flask, jsonify
-from flask_restful import Resource, Api, reqparse
 
+import os
+from functools import wraps
+
+from flask import Flask, jsonify, request, g
+from flask_bcrypt import Bcrypt
+from flask_restful import Resource, Api, reqparse
+from flask_talisman import Talisman
+
+from api_activity._constants import PROJECT_ROOT
+from api_activity.db import Database
+
+_KEYFILE_PATH = os.path.join(PROJECT_ROOT, "MyKey.pem")
+_CERTIFICATE_PATH = os.path.join(PROJECT_ROOT, "MyCertificate.crt")
 
 
 def init_api(app: Flask) -> None:
@@ -8,15 +19,53 @@ def init_api(app: Flask) -> None:
     api.add_resource(Hello, '/')
     api.add_resource(Square, '/square/<int:num>')
     api.add_resource(Echo, '/echo')
+    api.add_resource(Register, '/register')
+    api.add_resource(Profile, '/profile')
+    api.add_resource(Cube, '/cube/<int:num>')
 
 
-def run_app(debug: bool = True) -> None:
-    create_app().run(debug=debug)
+def run_app(debug: bool = True, with_ssl: bool = True) -> None:
+    ssl_context = (_CERTIFICATE_PATH, _KEYFILE_PATH) if with_ssl else None
+    create_app().run(debug=debug, ssl_context=ssl_context)
+
 
 def create_app() -> Flask:
     app = Flask(__name__)
+    app.config["PREFERRED_URL_SCHEME"] = "https"
+    Talisman(app, force_https=True)
     init_api(app)
+
+    @app.teardown_appcontext
+    def close_db(exception):
+        db = g.pop('db', None)
+        if db is not None:
+            db.conn.close()
+
     return app
+
+
+def get_db() -> Database:
+    if "db" not in g:
+        g.db = Database()
+    return g.db
+
+
+def auth_required(func):
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        auth = request.authorization
+        if auth is None:
+            return {"message": "Authentication required"}, 401
+        db = get_db()
+        hashed_pwd = db.get_password(auth.username)
+        valid = hashed_pwd is not None and Bcrypt().check_password_hash(
+            hashed_pwd, auth.password
+        )
+        if not valid:
+            return {"message": "Invalid credentials"}, 401
+        g.username = auth.username
+        return func(*args, **kwargs)
+    return wrapper
 
 class Hello(Resource):
     def get(self):
@@ -34,6 +83,46 @@ class Echo(Resource):
 
         arguments = parser.parse_args()
         return jsonify(arguments)
+
+class Register(Resource):
+    def put(self):
+        parser = reqparse.RequestParser()
+        parser.add_argument(
+            "username", type=str, required=True,
+            help="Username cannot be blank",
+        )
+        parser.add_argument(
+            "password", type=str, required=True,
+            help="Password cannot be blank",
+        )
+        args = parser.parse_args()
+        username = args['username']
+        password = args['password']
+
+        hashed_pwd = Bcrypt().generate_password_hash(password).decode('utf-8')
+
+        db = get_db()
+        if db.add_user(username, hashed_pwd):
+            response = jsonify(
+                {"message": f"User {username} registered successfully"}
+            )
+            response.status_code = 201
+            return response
+        else:
+            return {"message": f"User {username} already exists"}, 409
+
+
+class Profile(Resource):
+    @auth_required
+    def get(self):
+        return jsonify({"message": f"Hello, {g.username}!"})
+
+
+class Cube(Resource):
+    @auth_required
+    def get(self, num):
+        return jsonify({'Shape': __class__.__name__, 'Volume': num**3})
+
 
 if __name__ == "__main__":
     run_app()
